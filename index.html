@@ -9,25 +9,27 @@
     <style>
         .glass { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px); }
         body { background: #f3f4f6; }
+        .transition-width { transition: width 1s ease-in-out; }
     </style>
 </head>
 <body class="p-4 md:p-8">
     <div class="max-w-5xl mx-auto">
         <div class="flex justify-between items-center mb-8">
             <h1 class="text-3xl font-bold text-gray-800"><i class="fa-solid fa-chart-line text-blue-600 mr-2"></i>StockWatch</h1>
-            <button onclick="document.getElementById('addModal').classList.remove('hidden')" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg shadow-lg transition">
+            <button onclick="openModal()" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg shadow-lg transition">
                 + 添加股票
             </button>
         </div>
 
         <div id="stockGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-    <div class="col-span-full text-center py-20">
-        <i class="fas fa-spinner fa-spin text-4xl text-blue-500 mb-4"></i>
-        <p class="text-gray-500 animate-pulse">正在同步 Google Sheet 实时数据...</p>
+            <div class="col-span-full text-center py-20">
+                <i class="fas fa-circle-notch fa-spin text-4xl text-blue-500 mb-4"></i>
+                <p class="text-gray-500 animate-pulse">正在唤醒数据中心...</p>
+            </div>
+        </div>
     </div>
-</div>
 
-    <div id="addModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
+    <div id="addModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
         <div class="bg-white rounded-2xl p-8 max-w-md w-full shadow-2xl">
             <h2 class="text-2xl font-bold mb-6">新增监控股票</h2>
             <div class="space-y-4">
@@ -47,150 +49,119 @@
                     <input id="newTarget" type="number" placeholder="输入预警价格" class="w-full mt-1 p-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500">
                 </div>
                 <div class="flex gap-4 mt-8">
-                    <button onclick="submitStock()" class="flex-1 bg-blue-600 text-white py-3 rounded-xl font-bold">确定添加</button>
-                    <button onclick="document.getElementById('addModal').classList.add('hidden')" class="flex-1 bg-gray-100 text-gray-600 py-3 rounded-xl">取消</button>
+                    <button id="submitBtn" onclick="submitStock()" class="flex-1 bg-blue-600 text-white py-3 rounded-xl font-bold disabled:bg-blue-300">确定添加</button>
+                    <button onclick="closeModal()" class="flex-1 bg-gray-100 text-gray-600 py-3 rounded-xl">取消</button>
                 </div>
             </div>
         </div>
     </div>
 
     <script>
-        const API_URL = 'https://script.google.com/macros/s/AKfycbyNN2vYpzKwoFcx2gu7TD9-88TFZyMzeo0t5QYwKcMPYKmt_t4xmZaBhrZyZymb4aiVnQ/exec'; // 替换为你的部署链接
+        const API_URL = 'https://script.google.com/macros/s/AKfycbyNN2vYpzKwoFcx2gu7TD9-88TFZyMzeo0t5QYwKcMPYKmt_t4xmZaBhrZyZymb4aiVnQ/exec';
 
-// 1. 页面加载后立即执行：先查缓存，再查网络
-window.onload = () => {
-    initApp();
-};
+        window.onload = () => { initApp(); };
 
-async function initApp() {
-    // 立即显示缓存（如果有）
-    const cachedData = localStorage.getItem('stock_cache');
-    if (cachedData) {
-        console.log("加载本地缓存...");
-        renderStocks(JSON.parse(cachedData));
-    } else {
-        // 如果没有缓存，显示一个好看的骨架屏或 Loading
-        showLoading();
-    }
+        function openModal() { document.getElementById('addModal').classList.remove('hidden'); }
+        function closeModal() { document.getElementById('addModal').classList.add('hidden'); }
 
-    // 然后去后台抓取最新的
-    await fetchStocks();
-}
-
-function showLoading() {
-    const grid = document.getElementById('stockGrid');
-    grid.innerHTML = `
-        <div class="col-span-full text-center py-20">
-            <i class="fas fa-circle-notch fa-spin text-4xl text-blue-500 mb-4"></i>
-            <p class="text-gray-500 animate-pulse">正在唤醒数据中心，请稍候...</p>
-        </div>
-    `;
-}
-
-async function fetchStocks() {
-    try {
-        // 添加一个随机随机数参数，防止浏览器缓存旧的 JSON 结果
-        const response = await fetch(API_URL + '?t=' + new Date().getTime());
-        const data = await response.json();
-        
-        if (data && data.length > 0) {
-            localStorage.setItem('stock_cache', JSON.stringify(data));
-            renderStocks(data);
+        async function initApp() {
+            const cachedData = localStorage.getItem('stock_cache');
+            if (cachedData) {
+                renderStocks(JSON.parse(cachedData));
+            }
+            await fetchStocks();
         }
-    } catch (e) { 
-        console.error("API 请求失败:", e);
-        // 如果彻底失败且没缓存，显示错误提示
-        if(!localStorage.getItem('stock_cache')) {
-            document.getElementById('stockGrid').innerHTML = `<p class="col-span-full text-center text-red-500">无法连接到数据源，请检查 GAS 部署链接</p>`;
+
+        async function fetchStocks() {
+            try {
+                const response = await fetch(API_URL + '?t=' + new Date().getTime());
+                const data = await response.json();
+                if (data && data.length > 0) {
+                    localStorage.setItem('stock_cache', JSON.stringify(data));
+                    renderStocks(data);
+                }
+            } catch (e) {
+                console.error("加载失败", e);
+            }
         }
-    }
-}
-async function submitStock() {
-    const btn = event.target; // 获取点击的按钮
-    const originalText = btn.innerText;
-    
-    // 1. 获取输入值
-    const code = document.getElementById('newCode').value;
-    const market = document.getElementById('newMarket').value;
-    const target = document.getElementById('newTarget').value;
 
-    if (!code || !target) {
-        alert("请填写完整的股票代码和目标价格");
-        return;
-    }
+        async function submitStock() {
+            const btn = document.getElementById('submitBtn');
+            const code = document.getElementById('newCode').value;
+            const market = document.getElementById('newMarket').value;
+            const target = document.getElementById('newTarget').value;
 
-    const payload = {
-        code: code,
-        market: market,
-        target: target
-    };
+            if (!code || !target) {
+                alert("请填写完整的股票代码和目标价格");
+                return;
+            }
 
-    try {
-        // 2. 视觉反馈：禁用按钮防止重复提交
-        btn.innerText = "提交中...";
-        btn.disabled = true;
+            const payload = { code, market, target };
 
-        // 3. 发送请求
-        // 注意：由于 GAS 的转向机制，mode 设置为 'no-cors' 会导致无法获取返回结果，
-        // 但数据其实已经发过去了。这里我们直接等待请求完成。
-        await fetch(API_URL, {
-            method: 'POST',
-            mode: 'no-cors', // 解决 GAS 跨域报错的常用快捷方案
-            body: JSON.stringify(payload),
-            headers: { 'Content-Type': 'application/json' }
-        });
+            try {
+                btn.innerText = "提交中...";
+                btn.disabled = true;
 
-        // 4. 成功后的处理
-        alert("股票已添加！数据同步可能需要几秒钟。");
-        document.getElementById('addModal').classList.add('hidden'); // 关闭弹窗
-        location.reload(); // 刷新页面
-    } catch (e) {
-        console.error("提交失败:", e);
-        alert("网络请求失败，请检查 GAS URL 是否正确");
-    } finally {
-        btn.innerText = originalText;
-        btn.disabled = false;
-    }
-}
-function renderStocks(stocks) {
-    const grid = document.getElementById('stockGrid');
-    if (!stocks || stocks.length === 0) return;
+                // 使用 POST 请求发送到 GAS
+                await fetch(API_URL, {
+                    method: 'POST',
+                    mode: 'no-cors', // 关键：GAS 必须使用 no-cors 模式
+                    cache: 'no-cache',
+                    body: JSON.stringify(payload)
+                });
 
-    grid.innerHTML = stocks.map(stock => {
-        // 容错处理：确保价格和目标是有效数字
-        const current = parseFloat(stock.当前价格) || 0;
-        const target = parseFloat(stock.目标价格) || 0;
-        const progress = target > 0 ? Math.min((current / target) * 100, 100) : 0;
-        const isReached = stock.状态 === 'target_reached';
+                alert("股票添加指令已发送！数据刷新约有延迟。");
+                closeModal();
+                // 清理输入框
+                document.getElementById('newCode').value = '';
+                document.getElementById('newTarget').value = '';
+                // 延迟刷新以给 GAS 写入时间
+                setTimeout(() => { location.reload(); }, 1500);
+            } catch (e) {
+                console.error("提交失败:", e);
+                alert("提交出错，请检查网络或 GAS 配置");
+                btn.disabled = false;
+                btn.innerText = "确定添加";
+            }
+        }
 
-        return `
-            <div class="${isReached ? 'bg-green-50 border-2 border-green-500' : 'bg-white'} p-6 rounded-2xl shadow-sm hover:shadow-md transition">
-                <div class="flex justify-between items-start">
-                    <div>
-                        <span class="text-xs font-bold px-2 py-1 rounded bg-gray-100 text-gray-500 uppercase">${stock.市场}</span>
-                        <h3 class="text-xl font-bold mt-1 text-gray-800">${stock.股票代码}</h3>
-                        <p class="text-sm text-gray-400 text-truncate w-32">${stock.名称 || 'Stock'}</p>
+        function renderStocks(stocks) {
+            const grid = document.getElementById('stockGrid');
+            if (!stocks || stocks.length === 0) return;
+
+            grid.innerHTML = stocks.map(stock => {
+                const current = parseFloat(stock.当前价格) || 0;
+                const target = parseFloat(stock.目标价格) || 0;
+                const progress = target > 0 ? Math.min((current / target) * 100, 100) : 0;
+                const isReached = stock.状态 === 'target_reached';
+
+                return `
+                    <div class="${isReached ? 'bg-green-50 border-2 border-green-500' : 'bg-white'} p-6 rounded-2xl shadow-sm hover:shadow-md transition">
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <span class="text-xs font-bold px-2 py-1 rounded bg-gray-100 text-gray-500 uppercase">${stock.市场}</span>
+                                <h3 class="text-xl font-bold mt-1 text-gray-800">${stock.股票代码}</h3>
+                                <p class="text-sm text-gray-400 truncate w-32">${stock.名称 || 'Stock'}</p>
+                            </div>
+                            <div class="text-right">
+                                <p class="text-2xl font-black ${isReached ? 'text-green-600' : 'text-gray-700'}">${current.toLocaleString()}</p>
+                                <p class="text-xs text-gray-400">目标: ${target.toLocaleString()}</p>
+                            </div>
+                        </div>
+                        <div class="mt-4 flex items-center">
+                            <div class="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+                                <div class="h-full bg-blue-500 transition-width" style="width: ${progress}%"></div>
+                            </div>
+                            <span class="ml-3 text-xs font-bold ${isReached ? 'text-green-600' : 'text-blue-500'}">
+                                ${isReached ? '已达成' : '监控中'}
+                            </span>
+                        </div>
                     </div>
-                    <div class="text-right">
-                        <p class="text-2xl font-black ${isReached ? 'text-green-600' : 'text-gray-700'}">${current.toLocaleString()}</p>
-                        <p class="text-xs text-gray-400">目标: ${target.toLocaleString()}</p>
-                    </div>
-                </div>
-                <div class="mt-4 flex items-center">
-                    <div class="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
-                        <div class="h-full bg-blue-500 transition-all duration-1000" style="width: ${progress}%"></div>
-                    </div>
-                    <span class="ml-3 text-xs font-bold ${isReached ? 'text-green-600' : 'text-blue-500'}">
-                        ${isReached ? '已达成' : '监控中'}
-                    </span>
-                </div>
-            </div>
-        `;
-    }).join('');
-}
+                `;
+            }).join('');
+        }
 
-// 保持自动刷新
-setInterval(fetchStocks, 60000);
+        setInterval(fetchStocks, 60000);
     </script>
 </body>
 </html>
