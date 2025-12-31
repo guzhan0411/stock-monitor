@@ -57,73 +57,94 @@
     <script>
         const API_URL = 'https://script.google.com/macros/s/AKfycbxXQGrsfOZqgtTckIch0pY8w_sgF2930ggqNl7gdMXPHghbaFjXUuMrKPW4LvJF-4p7RA/exec'; // 替换为你的部署链接
 
-        async function fetchStocks() {
-    // 1. 尝试先从本地缓存读取并显示
+// 1. 页面加载后立即执行：先查缓存，再查网络
+window.onload = () => {
+    initApp();
+};
+
+async function initApp() {
+    // 立即显示缓存（如果有）
     const cachedData = localStorage.getItem('stock_cache');
     if (cachedData) {
+        console.log("加载本地缓存...");
         renderStocks(JSON.parse(cachedData));
+    } else {
+        // 如果没有缓存，显示一个好看的骨架屏或 Loading
+        showLoading();
     }
 
+    // 然后去后台抓取最新的
+    await fetchStocks();
+}
+
+function showLoading() {
+    const grid = document.getElementById('stockGrid');
+    grid.innerHTML = `
+        <div class="col-span-full text-center py-20">
+            <i class="fas fa-circle-notch fa-spin text-4xl text-blue-500 mb-4"></i>
+            <p class="text-gray-500 animate-pulse">正在唤醒数据中心，请稍候...</p>
+        </div>
+    `;
+}
+
+async function fetchStocks() {
     try {
-        const response = await fetch(API_URL);
+        // 添加一个随机随机数参数，防止浏览器缓存旧的 JSON 结果
+        const response = await fetch(API_URL + '?t=' + new Date().getTime());
         const data = await response.json();
         
-        // 2. 拿到新数据后存入缓存
-        localStorage.setItem('stock_cache', JSON.stringify(data));
-        
-        // 3. 更新界面
-        renderStocks(data);
+        if (data && data.length > 0) {
+            localStorage.setItem('stock_cache', JSON.stringify(data));
+            renderStocks(data);
+        }
     } catch (e) { 
-        console.error("加载失败", e); 
+        console.error("API 请求失败:", e);
+        // 如果彻底失败且没缓存，显示错误提示
+        if(!localStorage.getItem('stock_cache')) {
+            document.getElementById('stockGrid').innerHTML = `<p class="col-span-full text-center text-red-500">无法连接到数据源，请检查 GAS 部署链接</p>`;
+        }
     }
 }
 
-        function renderStocks(stocks) {
-            const grid = document.getElementById('stockGrid');
-            grid.innerHTML = stocks.map(stock => `
-                <div class="${stock.状态 === 'target_reached' ? 'bg-green-50 border-2 border-green-500' : 'bg-white'} p-6 rounded-2xl shadow-sm hover:shadow-md transition cursor-pointer">
-                    <div class="flex justify-between items-start">
-                        <div>
-                            <span class="text-xs font-bold px-2 py-1 rounded bg-gray-100 text-gray-500 uppercase">${stock.市场}</span>
-                            <h3 class="text-xl font-bold mt-1 text-gray-800">${stock.股票代码}</h3>
-                            <p class="text-sm text-gray-400">${stock.名称 || '股票名称'}</p>
-                        </div>
-                        <div class="text-right">
-                            <p class="text-2xl font-black ${stock.状态 === 'target_reached' ? 'text-green-600' : 'text-gray-700'}">${stock.当前价格}</p>
-                            <p class="text-xs text-gray-400">目标: ${stock.目标价格}</p>
-                        </div>
+function renderStocks(stocks) {
+    const grid = document.getElementById('stockGrid');
+    if (!stocks || stocks.length === 0) return;
+
+    grid.innerHTML = stocks.map(stock => {
+        // 容错处理：确保价格和目标是有效数字
+        const current = parseFloat(stock.当前价格) || 0;
+        const target = parseFloat(stock.目标价格) || 0;
+        const progress = target > 0 ? Math.min((current / target) * 100, 100) : 0;
+        const isReached = stock.状态 === 'target_reached';
+
+        return `
+            <div class="${isReached ? 'bg-green-50 border-2 border-green-500' : 'bg-white'} p-6 rounded-2xl shadow-sm hover:shadow-md transition">
+                <div class="flex justify-between items-start">
+                    <div>
+                        <span class="text-xs font-bold px-2 py-1 rounded bg-gray-100 text-gray-500 uppercase">${stock.市场}</span>
+                        <h3 class="text-xl font-bold mt-1 text-gray-800">${stock.股票代码}</h3>
+                        <p class="text-sm text-gray-400 text-truncate w-32">${stock.名称 || 'Stock'}</p>
                     </div>
-                    <div class="mt-4 flex items-center">
-                        <div class="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
-                            <div class="h-full bg-blue-500" style="width: ${Math.min((stock.当前价格/stock.目标价格)*100, 100)}%"></div>
-                        </div>
-                        <span class="ml-3 text-xs font-bold ${stock.状态 === 'target_reached' ? 'text-green-600' : 'text-blue-500'}">
-                            ${stock.状态 === 'target_reached' ? '已达成' : '监控中'}
-                        </span>
+                    <div class="text-right">
+                        <p class="text-2xl font-black ${isReached ? 'text-green-600' : 'text-gray-700'}">${current.toLocaleString()}</p>
+                        <p class="text-xs text-gray-400">目标: ${target.toLocaleString()}</p>
                     </div>
                 </div>
-            `).join('');
-        }
+                <div class="mt-4 flex items-center">
+                    <div class="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+                        <div class="h-full bg-blue-500 transition-all duration-1000" style="width: ${progress}%"></div>
+                    </div>
+                    <span class="ml-3 text-xs font-bold ${isReached ? 'text-green-600' : 'text-blue-500'}">
+                        ${isReached ? '已达成' : '监控中'}
+                    </span>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
 
-        async function submitStock() {
-            const payload = {
-                code: document.getElementById('newCode').value,
-                market: document.getElementById('newMarket').value,
-                target: document.getElementById('newTarget').value
-            };
-            
-            // 这里因为 GAS 的跨域限制，通常需要用 fetch 的 mode: 'no-cors' 或者通过特定的方式处理
-            // 为简单起见，建议通过表单或直接请求接口
-            alert("正在发送请求到 Google Sheets...");
-            await fetch(API_URL, {
-                method: 'POST',
-                body: JSON.stringify(payload)
-            });
-            location.reload();
-        }
-
-        fetchStocks();
-        setInterval(fetchStocks, 60000); // 每分钟自动刷新
+// 保持自动刷新
+setInterval(fetchStocks, 60000);
     </script>
 </body>
 </html>
