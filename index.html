@@ -3,438 +3,114 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>股票监控系统 - Google Sheets版</title>
-    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <title>StockWatch | 股票监控仪表盘</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .glass { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px); }
+        body { background: #f3f4f6; }
+    </style>
 </head>
-<body>
-    <div id="root"></div>
-    
-    <script type="text/babel">
-        const { useState, useEffect } = React;
-        
-        const TrendingUp = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline><polyline points="17 6 23 6 23 12"></polyline></svg>;
-        const TrendingDown = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 18 13.5 8.5 8.5 13.5 1 6"></polyline><polyline points="17 18 23 18 23 12"></polyline></svg>;
-        const RefreshCw = ({ className }) => <svg className={className} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>;
-        const Plus = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>;
-        const Trash2 = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>;
-        const Check = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="20 6 9 17 4 12"></polyline></svg>;
-        const Bell = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>;
-        const Database = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path></svg>;
+<body class="p-4 md:p-8">
+    <div class="max-w-5xl mx-auto">
+        <div class="flex justify-between items-center mb-8">
+            <h1 class="text-3xl font-bold text-gray-800"><i class="fa-solid fa-chart-line text-blue-600 mr-2"></i>StockWatch</h1>
+            <button onclick="document.getElementById('addModal').classList.remove('hidden')" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg shadow-lg transition">
+                + 添加股票
+            </button>
+        </div>
 
-        const StockMonitor = () => {
-          const [stocks, setStocks] = useState([]);
-          const [loading, setLoading] = useState(false);
-          const [newStock, setNewStock] = useState({ symbol: '', market: 'US', targetPrice: '' });
-          const [sheetUrl, setSheetUrl] = useState('');
-          const [isConnected, setIsConnected] = useState(false);
-          const [lastUpdate, setLastUpdate] = useState(null);
+        <div id="stockGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div class="animate-pulse bg-white p-6 rounded-xl h-40"></div>
+            <div class="animate-pulse bg-white p-6 rounded-xl h-40"></div>
+            <div class="animate-pulse bg-white p-6 rounded-xl h-40"></div>
+        </div>
+    </div>
 
-          const marketConfig = {
-            'US': { name: '美股', currency: '$', symbol: 'USD' },
-            'JP': { name: '日股', currency: '¥', symbol: 'JPY' },
-            'CN': { name: 'A股', currency: '¥', symbol: 'CNY', optional: true },
-            'HK': { name: '港股', currency: 'HK$', symbol: 'HKD', optional: true }
-          };
-
-          const loadFromSheets = async () => {
-            if (!sheetUrl) {
-              alert('请先输入Google Sheets链接');
-              return;
-            }
-            
-            setLoading(true);
-            try {
-              const csvUrl = sheetUrl.includes('/edit') 
-                ? sheetUrl.replace('/edit#gid=', '/export?format=csv&gid=').replace('/edit', '/export?format=csv')
-                : sheetUrl;
-              
-              const response = await fetch(csvUrl);
-              const text = await response.text();
-              
-              const rows = text.split('\n').slice(1);
-              const parsedStocks = rows
-                .filter(row => row.trim())
-                .map((row, index) => {
-                  const [symbol, name, market, targetPrice, currentPrice, status] = row.split(',');
-                  return {
-                    id: index,
-                    symbol: symbol?.trim() || '',
-                    name: name?.trim() || '',
-                    market: market?.trim() || 'US',
-                    targetPrice: parseFloat(targetPrice) || 0,
-                    currentPrice: parseFloat(currentPrice) || 0,
-                    status: status?.trim() || 'monitoring'
-                  };
-                })
-                .filter(stock => stock.symbol);
-              
-              setStocks(parsedStocks);
-              setIsConnected(true);
-              setLastUpdate(new Date());
-              alert('✓ 成功从Google Sheets加载数据！');
-            } catch (error) {
-              console.error('加载失败:', error);
-              alert('加载失败，请确保：\n1. Google Sheets已发布到网络\n2. 发布格式选择CSV\n3. 链接格式正确');
-            }
-            setLoading(false);
-          };
-
-          const fetchStockPrice = async (symbol, market) => {
-            await new Promise(resolve => setTimeout(resolve, 500));
-            
-            switch(market) {
-              case 'US': return Math.random() * 300 + 50;
-              case 'JP': return Math.random() * 3000 + 1000;
-              case 'CN': return Math.random() * 100 + 10;
-              case 'HK': return Math.random() * 500 + 50;
-              default: return Math.random() * 100 + 50;
-            }
-          };
-
-          const refreshPrices = async () => {
-            setLoading(true);
-            const updatedStocks = await Promise.all(
-              stocks.map(async (stock) => {
-                const currentPrice = await fetchStockPrice(stock.symbol, stock.market);
-                const isTarget = currentPrice >= stock.targetPrice;
-                
-                if (isTarget && stock.status !== 'target_reached') {
-                  sendNotification(stock.symbol, currentPrice, stock.targetPrice, stock.market);
-                }
-                
-                return {
-                  ...stock,
-                  currentPrice,
-                  status: isTarget ? 'target_reached' : 'monitoring'
-                };
-              })
-            );
-            
-            setStocks(updatedStocks);
-            setLastUpdate(new Date());
-            setLoading(false);
-          };
-
-          const sendNotification = (symbol, currentPrice, targetPrice, market) => {
-            if ('Notification' in window && Notification.permission === 'granted') {
-              const currency = marketConfig[market].currency;
-              new Notification('🎯 目标价格已达到！', {
-                body: `${symbol} 当前价格 ${currency}${currentPrice.toFixed(2)} 已达到目标价格 ${currency}${targetPrice.toFixed(2)}`
-              });
-            }
-          };
-
-          const requestNotificationPermission = () => {
-            if ('Notification' in window && Notification.permission === 'default') {
-              Notification.requestPermission();
-            }
-          };
-
-          const addStock = () => {
-            if (!newStock.symbol || !newStock.targetPrice) {
-              alert('请填写股票代码和目标价格');
-              return;
-            }
-
-            const stock = {
-              id: Date.now(),
-              symbol: newStock.symbol.toUpperCase(),
-              name: newStock.symbol.toUpperCase(),
-              market: newStock.market,
-              targetPrice: parseFloat(newStock.targetPrice),
-              currentPrice: 0,
-              status: 'monitoring'
-            };
-
-            setStocks([...stocks, stock]);
-            setNewStock({ symbol: '', market: 'US', targetPrice: '' });
-          };
-
-          const deleteStock = (id) => {
-            setStocks(stocks.filter(stock => stock.id !== id));
-          };
-
-          const formatPrice = (price, market) => {
-            const config = marketConfig[market] || marketConfig['US'];
-            return `${config.currency}${price.toFixed(2)}`;
-          };
-
-          useEffect(() => {
-            requestNotificationPermission();
-            
-            const interval = setInterval(() => {
-              if (stocks.length > 0 && isConnected) {
-                refreshPrices();
-              }
-            }, 300000);
-
-            return () => clearInterval(interval);
-          }, [stocks, isConnected]);
-
-          const getStatusColor = (status) => {
-            return status === 'target_reached' ? 'bg-green-100 border-green-500' : 'bg-white border-gray-200';
-          };
-
-          const getStatusIcon = (status) => {
-            return status === 'target_reached' ? <div className="text-green-600"><Check /></div> : null;
-          };
-
-          const getMarketBadgeColor = (market) => {
-            const colors = {
-              'US': 'bg-blue-100 text-blue-800',
-              'JP': 'bg-red-100 text-red-800',
-              'CN': 'bg-yellow-100 text-yellow-800',
-              'HK': 'bg-purple-100 text-purple-800'
-            };
-            return colors[market] || 'bg-gray-100 text-gray-800';
-          };
-
-          return (
-            <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
-              <div className="max-w-6xl mx-auto">
-                <div className="text-center mb-8 pt-8">
-                  <h1 className="text-4xl font-bold text-gray-800 mb-2">📊 股票监控系统</h1>
-                  <p className="text-gray-600">Google Sheets版 - 美股·日股为主，A股·港股可选</p>
-                  <div className="flex items-center justify-center gap-2 mt-2">
-                    <Database className="text-blue-600" />
-                    <span className="text-sm text-blue-600">数据存储在Google Sheets</span>
-                  </div>
+    <div id="addModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl p-8 max-w-md w-full shadow-2xl">
+            <h2 class="text-2xl font-bold mb-6">新增监控股票</h2>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">股票代码</label>
+                    <input id="newCode" type="text" placeholder="例如: 7203.T 或 AAPL" class="w-full mt-1 p-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500">
                 </div>
-
-                <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
-                  <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
-                    <TrendingUp />
-                    连接Google Sheets
-                  </h2>
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      placeholder="粘贴Google Sheets的CSV导出链接..."
-                      className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      value={sheetUrl}
-                      onChange={(e) => setSheetUrl(e.target.value)}
-                    />
-                    <button
-                      onClick={loadFromSheets}
-                      disabled={loading}
-                      className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 flex items-center gap-2"
-                    >
-                      <RefreshCw className={loading ? 'animate-spin' : ''} />
-                      加载数据
-                    </button>
-                  </div>
-                  {isConnected && (
-                    <p className="text-sm text-green-600 mt-2">✓ 已连接到Google Sheets</p>
-                  )}
-                  <details className="mt-4">
-                    <summary className="text-sm text-gray-600 cursor-pointer hover:text-gray-800">
-                      如何设置Google Sheets？点击查看
-                    </summary>
-                    <div className="mt-2 text-sm text-gray-600 bg-gray-50 p-4 rounded space-y-2">
-                      <p><strong>步骤1：</strong>在Google Sheets中创建表格</p>
-                      <p><strong>列标题：</strong>股票代码 | 名称 | 市场 | 目标价格 | 当前价格 | 状态</p>
-                      <p><strong>步骤2：</strong>文件 → 共享 → 发布到网络</p>
-                      <p><strong>步骤3：</strong>选择"整个文档" + "CSV格式"</p>
-                      <p><strong>步骤4：</strong>点击"发布"并复制链接</p>
-                      <div className="mt-3 p-3 bg-blue-50 rounded">
-                        <p className="font-semibold text-blue-800">✅ 推荐市场：US（美股）、JP（日股）</p>
-                        <p className="text-blue-700 text-xs mt-1">CN（A股）和HK（港股）数据可能不稳定</p>
-                      </div>
-                    </div>
-                  </details>
-                </div>
-
-                <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
-                  <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
-                    <Plus />
-                    添加监控股票
-                  </h2>
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                    <input
-                      type="text"
-                      placeholder="股票代码 (如: AAPL)"
-                      className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      value={newStock.symbol}
-                      onChange={(e) => setNewStock({...newStock, symbol: e.target.value.toUpperCase()})}
-                    />
-                    <select
-                      className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      value={newStock.market}
-                      onChange={(e) => setNewStock({...newStock, market: e.target.value})}
-                    >
-                      <option value="US">✅ 美股 (USD $)</option>
-                      <option value="JP">✅ 日股 (JPY ¥)</option>
-                      <option value="CN">⚠️ A股 (CNY ¥) - 可选</option>
-                      <option value="HK">⚠️ 港股 (HKD HK$) - 可选</option>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">市场</label>
+                    <select id="newMarket" class="w-full mt-1 p-3 border rounded-xl">
+                        <option value="US">美股 (US)</option>
+                        <option value="JP">日股 (JP)</option>
                     </select>
-                    <input
-                      type="number"
-                      placeholder="目标价格"
-                      className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      value={newStock.targetPrice}
-                      onChange={(e) => setNewStock({...newStock, targetPrice: e.target.value})}
-                    />
-                    <button
-                      onClick={addStock}
-                      className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center justify-center gap-2"
-                    >
-                      <Plus />
-                      添加
-                    </button>
-                  </div>
                 </div>
-
-                <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
-                  <div className="flex justify-between items-center">
-                    <div>
-                      <h2 className="text-xl font-semibold flex items-center gap-2">
-                        <Bell />
-                        监控清单
-                        <span className="text-sm font-normal text-gray-500">
-                          ({stocks.length} 只股票)
-                        </span>
-                      </h2>
-                      {lastUpdate && (
-                        <p className="text-sm text-gray-500 mt-1">
-                          最后更新: {lastUpdate.toLocaleTimeString('zh-CN')}
-                        </p>
-                      )}
-                    </div>
-                    <button
-                      onClick={refreshPrices}
-                      disabled={loading || stocks.length === 0}
-                      className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 flex items-center gap-2"
-                    >
-                      <RefreshCw className={loading ? 'animate-spin' : ''} />
-                      刷新价格
-                    </button>
-                  </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">目标价格</label>
+                    <input id="newTarget" type="number" placeholder="输入预警价格" class="w-full mt-1 p-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500">
                 </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {stocks.map((stock) => {
-                    const priceChange = stock.currentPrice - stock.targetPrice;
-                    const changePercent = stock.targetPrice > 0 
-                      ? ((priceChange / stock.targetPrice) * 100).toFixed(2)
-                      : 0;
-                    const isUp = priceChange >= 0;
-                    const marketInfo = marketConfig[stock.market] || marketConfig['US'];
-
-                    return (
-                      <div
-                        key={stock.id}
-                        className={`rounded-lg shadow-lg p-6 border-2 ${getStatusColor(stock.status)} transition-all`}
-                      >
-                        <div className="flex justify-between items-start mb-4">
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-1">
-                              <h3 className="text-2xl font-bold text-gray-800">{stock.symbol}</h3>
-                              {getStatusIcon(stock.status)}
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <span className={`text-xs px-2 py-1 rounded-full font-semibold ${getMarketBadgeColor(stock.market)}`}>
-                                {marketInfo.name}
-                              </span>
-                              <span className="text-sm text-gray-600">{stock.name}</span>
-                            </div>
-                          </div>
-                          <button
-                            onClick={() => deleteStock(stock.id)}
-                            className="text-red-500 hover:text-red-700 p-1"
-                          >
-                            <Trash2 />
-                          </button>
-                        </div>
-
-                        <div className="space-y-3">
-                          <div>
-                            <p className="text-sm text-gray-600">当前价格</p>
-                            <p className="text-3xl font-bold text-gray-800">
-                              {stock.currentPrice > 0 ? formatPrice(stock.currentPrice, stock.market) : '--'}
-                            </p>
-                          </div>
-
-                          <div>
-                            <p className="text-sm text-gray-600">目标价格</p>
-                            <p className="text-xl font-semibold text-gray-700">
-                              {formatPrice(stock.targetPrice, stock.market)}
-                            </p>
-                          </div>
-
-                          {stock.currentPrice > 0 && (
-                            <div className={`flex items-center gap-2 ${isUp ? 'text-green-600' : 'text-red-600'}`}>
-                              {isUp ? <TrendingUp /> : <TrendingDown />}
-                              <span className="font-semibold">
-                                {isUp ? '+' : ''}{marketInfo.currency}{Math.abs(priceChange).toFixed(2)} ({isUp ? '+' : ''}{changePercent}%)
-                              </span>
-                            </div>
-                          )}
-
-                          {stock.status === 'target_reached' && (
-                            <div className="bg-green-50 border border-green-200 rounded p-2 mt-2">
-                              <p className="text-sm text-green-700 font-semibold">
-                                🎯 已达到目标价格！
-                              </p>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
+                <div class="flex gap-4 mt-8">
+                    <button onclick="submitStock()" class="flex-1 bg-blue-600 text-white py-3 rounded-xl font-bold">确定添加</button>
+                    <button onclick="document.getElementById('addModal').classList.add('hidden')" class="flex-1 bg-gray-100 text-gray-600 py-3 rounded-xl">取消</button>
                 </div>
-
-                {stocks.length === 0 && (
-                  <div className="bg-white rounded-lg shadow-lg p-12 text-center">
-                    <p className="text-gray-500 text-lg mb-6">
-                      暂无监控股票，请从Google Sheets加载或手动添加
-                    </p>
-                    <div className="grid grid-cols-2 gap-4 max-w-md mx-auto">
-                      <div className="bg-blue-50 p-4 rounded-lg">
-                        <p className="font-semibold text-blue-800">✅ 美股</p>
-                        <p className="text-sm text-gray-600 mt-1">AAPL, GOOGL</p>
-                        <p className="text-xs text-blue-600 mt-1">数据准确</p>
-                      </div>
-                      <div className="bg-red-50 p-4 rounded-lg">
-                        <p className="font-semibold text-red-800">✅ 日股</p>
-                        <p className="text-sm text-gray-600 mt-1">7203.T, 6758.T</p>
-                        <p className="text-xs text-red-600 mt-1">数据可靠</p>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                <div className="mt-8 bg-white rounded-lg shadow p-6 text-center text-sm text-gray-600 mb-8">
-                  <h3 className="font-semibold text-gray-800 mb-3">💡 方案特点</h3>
-                  <div className="grid md:grid-cols-2 gap-4 text-left">
-                    <div>
-                      <p className="font-semibold text-green-700 mb-2">✅ 核心优势</p>
-                      <ul className="space-y-1 text-xs">
-                        <li>• 美股、日股数据准确可靠</li>
-                        <li>• 配合Apps Script 24/7自动监控</li>
-                        <li>• 邮件通知不会错过</li>
-                        <li>• 数据安全存储在Google云端</li>
-                      </ul>
-                    </div>
-                    <div>
-                      <p className="font-semibold text-yellow-700 mb-2">⚠️ 注意事项</p>
-                      <ul className="space-y-1 text-xs">
-                        <li>• A股数据通过GOOGLEFINANCE可能不稳定</li>
-                        <li>• 港股数据更新可能有延迟</li>
-                        <li>• 建议主要用于美股和日股</li>
-                        <li>• A股和港股作为可选补充</li>
-                      </ul>
-                    </div>
-                  </div>
-                </div>
-              </div>
             </div>
-          );
-        };
+        </div>
+    </div>
 
-        ReactDOM.render(<StockMonitor />, document.getElementById('root'));
+    <script>
+        const API_URL = '你的_GOOGLE_APPS_SCRIPT_URL'; // 替换为你的部署链接
+
+        async function fetchStocks() {
+            try {
+                const response = await fetch(API_URL);
+                const data = await response.json();
+                renderStocks(data);
+            } catch (e) { console.error("加载失败", e); }
+        }
+
+        function renderStocks(stocks) {
+            const grid = document.getElementById('stockGrid');
+            grid.innerHTML = stocks.map(stock => `
+                <div class="${stock.状态 === 'target_reached' ? 'bg-green-50 border-2 border-green-500' : 'bg-white'} p-6 rounded-2xl shadow-sm hover:shadow-md transition cursor-pointer">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <span class="text-xs font-bold px-2 py-1 rounded bg-gray-100 text-gray-500 uppercase">${stock.市场}</span>
+                            <h3 class="text-xl font-bold mt-1 text-gray-800">${stock.股票代码}</h3>
+                            <p class="text-sm text-gray-400">${stock.名称 || '股票名称'}</p>
+                        </div>
+                        <div class="text-right">
+                            <p class="text-2xl font-black ${stock.状态 === 'target_reached' ? 'text-green-600' : 'text-gray-700'}">${stock.当前价格}</p>
+                            <p class="text-xs text-gray-400">目标: ${stock.目标价格}</p>
+                        </div>
+                    </div>
+                    <div class="mt-4 flex items-center">
+                        <div class="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+                            <div class="h-full bg-blue-500" style="width: ${Math.min((stock.当前价格/stock.目标价格)*100, 100)}%"></div>
+                        </div>
+                        <span class="ml-3 text-xs font-bold ${stock.状态 === 'target_reached' ? 'text-green-600' : 'text-blue-500'}">
+                            ${stock.状态 === 'target_reached' ? '已达成' : '监控中'}
+                        </span>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        async function submitStock() {
+            const payload = {
+                code: document.getElementById('newCode').value,
+                market: document.getElementById('newMarket').value,
+                target: document.getElementById('newTarget').value
+            };
+            
+            // 这里因为 GAS 的跨域限制，通常需要用 fetch 的 mode: 'no-cors' 或者通过特定的方式处理
+            // 为简单起见，建议通过表单或直接请求接口
+            alert("正在发送请求到 Google Sheets...");
+            await fetch(API_URL, {
+                method: 'POST',
+                body: JSON.stringify(payload)
+            });
+            location.reload();
+        }
+
+        fetchStocks();
+        setInterval(fetchStocks, 60000); // 每分钟自动刷新
     </script>
 </body>
 </html>
